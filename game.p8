@@ -38,9 +38,13 @@ function actor:collides(other)
 	return boxes_overlap(ax1, ay1, ax2, ay2, bx1, by1, bx2, by2)
 end
 
+function actor:time_unit_over()
+
+end
+
 --------------------------------------------------------------------------------------------------------------------------------
 
-player = actor:new({x=63, y=100, depth = 5, mom = 0, acc = 0.3, dec = 0.2, max_mom = 1.5, shot_timer = 0, double_dist = 4, collision_width=9, collision_height=14, collision_offset_x=-4, collision_offset_y=0})
+player = actor:new({x=63, y=100, depth = 5, mom = 0, acc = 0.3, dec = 0.2, max_mom = 1.5, shot_timer = 0, double_dist = 4, collision_width=9, collision_height=10, collision_offset_x=-4, collision_offset_y=4})
 
 function player:update()
 
@@ -118,7 +122,7 @@ function star:update()
 	end
 
 	if self.y >= 128 then
-		self.y = 0
+		self.y -=128
 		self.x = rnd(127)
 	end
 end
@@ -129,12 +133,21 @@ end
 
 --------------------------------------------------------------------------------------------------------------------------------
 
-shot = actor:new({speed = 4, depth = 4})
+shot = actor:new({speed = 4, depth = 4, collision_width=1, collision_height=15, collision_offset_x=0, collision_offset_y=0})
 
 function shot:update()
 	self.y-=self.speed
 	if self.y < -15 then
 		self.dead = true
+	end
+
+	for a in all(actors) do
+		if not self.dead and a.enemy and self:collides(a) then
+			a:hit()
+			if not self.plasma then
+				self.dead = true
+			end
+		end
 	end
 end
 
@@ -177,6 +190,146 @@ end
 
 --------------------------------------------------------------------------------------------------------------------------------
 
+basic_enemy = actor:new({colour = 8, collision_width=9, collision_height=9, collision_offset_x=-4, collision_offset_y=-4, sine_timer = 0, enemy = true, points=1})
+
+function basic_enemy:update()
+	if not self.tail_pos then
+		self.tail_pos = {}
+		for i = 0,4 do
+			self.tail_pos[i] = {x=self.x, y=self.y}
+		end
+		self:set_initial()
+		self.prev_x = self.x
+		self.prev_y = self.y
+		self.goal_x = 128-self.x
+		self.goal_y = self.y+16
+	end
+
+	self:move()
+
+	for i=4,1,-1 do
+		self.tail_pos[i].x = self.tail_pos[i-1].x
+		self.tail_pos[i].y = self.tail_pos[i-1].y-3
+	end
+
+	self.tail_pos[0].x = self.x
+	self.tail_pos[0].y = self.y
+
+	self.sine_timer += 0.01 * game_speed
+	if self.sine_timer >= 1 then
+		self.sine_timer -=1
+	end
+end
+
+function basic_enemy:set_initial()
+	self.init_x = self.x
+	self.init_y = self.y
+end
+
+function basic_enemy:move()
+	self.x = lerp(self.prev_x, self.goal_x, slerp_time_unit)
+	self.y = lerp(self.prev_y, self.goal_y, slerp_time_unit)
+end
+
+function basic_enemy:time_unit_over()
+	local x, y = self.prev_x, self.prev_y
+	self.prev_x = self.goal_x
+	self.prev_y = self.goal_y
+	self.goal_x = x
+	self.goal_y = y
+end
+
+function basic_enemy:go_away()
+	self.y+=1 * game_speed
+	self.x = self.init_x + 16 * sin(self.sine_timer)
+	if self.y > 128 then
+		self.y = -16
+	end
+end
+
+function basic_enemy:draw()
+	if self.tail_pos then
+		for i = 0,4 do
+			circfill(self.tail_pos[i].x, self.tail_pos[i].y, 4-i, self.colour)
+		end
+	end
+	draw_eye(self.x,self.y,0)
+end
+
+function basic_enemy:hit()
+	if not self.dead then
+		self.dead = true
+		add_actor(points_marker:new({x = self.x, y = self.y, value = self.points}))
+		if(rnd(6)<3) add_actor(powerup:new({x=self.x-4, y = self.y-4}))
+	end
+end
+
+--------------------------------------------------------------------------------------------------------------------------------
+
+points_marker = actor:new({value = 1, life = 0, depth = 50})
+
+function points_marker:update()
+	if self.life == 0 then
+		score:add(self.value)
+	end
+	self.life+=1
+	self.y-=0.1
+	if self.life > 40 then
+		self.dead = true
+	end
+end
+
+function points_marker:draw()
+	if self.life%2==0 then
+		local print_string = self.value.."0"
+		for i=-1,1 do
+			for j=-1,1 do
+				print(print_string, self.x-2*#print_string+i, self.y-3+j, 0)
+			end
+		end
+		print(print_string, self.x-2*#print_string, self.y-3, 7)
+	end
+end
+
+--------------------------------------------------------------------------------------------------------------------------------
+
+score = actor:new({x=1, y=122, score = 0, reel_speed = 0.25, digits = {0,0,0,0,0,0}, desired_digits = {0,0,0,0,0,0}})
+
+function score:update()
+
+	local remaining = self.score
+	for i = 5,1,-1 do
+		local mod = remaining % 10
+		self.desired_digits[i] = mod
+		remaining -= mod
+		remaining /= 10
+	end
+
+	for i = 1, 6 do
+		if abs(self.digits[i] - self.desired_digits[i]) > 0.0001 then
+			self.digits[i] += self.reel_speed
+		end
+		if self.digits[i] >= 10 then
+			self.digits[i] = 0
+		end
+	end
+end
+
+function score:add(amount)
+	self.score+=amount
+	self.score = mid(0,32000, self.score)
+end
+
+function score:draw()
+	clip(self.x, self.y-1, 24, 7)
+	print(""..self.score, self.x+60, self.y, 7)
+	for i = 0,5 do
+		print("0\n9\n8\n7\n6\n5\n4\n3\n2\n1\n0",self.x + 4*i, self.y-60 + self.digits[i+1] * 6, 7)
+	end
+end
+
+--------------------------------------------------------------------------------------------------------------------------------
+
 function _init()
 	actors = {}
 	add_actor(player)
@@ -192,6 +345,12 @@ function _init()
 	weapon_flash_time = 0
 
 	powerup_timer = 0
+
+	time_unit = 0
+	slerp_time_unit = 0
+
+	--enable mouse for testing
+	--poke(0x5f2d, 1)
 end
 
 function create_stars()
@@ -213,11 +372,26 @@ function _update60()
 			del(actors, a)
 		end
 	end
-	debug_weapon_level()
+
+	if not any_enemies() and time_unit < 0.1then
+		add_actor(basic_enemy:new({x=32,y=64}))
+		add_actor(basic_enemy:new({x=96,y=64}))
+		add_actor(basic_enemy:new({x=24,y=32}))
+		add_actor(basic_enemy:new({x=108,y=32}))
+	end
+	--debug_weapon_level()
 	update_weapon()
-	debug_many_powerups()
+	--debug_many_powerups()
 
 	animate_powerups()
+
+	debug_speed()
+
+	do_timing()
+
+	star_speed = 2*game_speed
+
+	score:update()
 end
 
 function add_actor(a)
@@ -243,6 +417,17 @@ function update_weapon()
 	end
 end
 
+function do_timing()
+	time_unit += 0.01 * game_speed
+	if time_unit >= 1 then
+		time_unit -=1
+		for a in all(actors) do
+			a:time_unit_over()
+		end
+	end
+	slerp_time_unit = (sin(time_unit/2)+1)/2
+end
+
 function animate_powerups()
 	powerup_timer+=0.1
 	if powerup_timer >= 2 then
@@ -258,6 +443,14 @@ function debug_weapon_level()
 	end
 end
 
+function debug_speed()
+	if btnp(2) then
+		game_speed +=0.1
+	elseif btnp(3) then
+		game_speed -=0.1
+	end
+end
+
 function debug_many_powerups()
 	if(rnd(128) < 2) add_actor(powerup:new({x=rnd(119) + 4, y = -8}))
 end
@@ -270,6 +463,19 @@ function boxes_overlap(ax1, ay1, ax2, ay2, bx1, by1, bx2, by2)
 	return true
 end
 
+function lerp(a, b, t)
+	return (1-t) * a + t * b
+end
+
+function any_enemies()
+	for a in all(actors) do
+		if a.enemy then
+			return true
+		end
+	end
+	return false
+end
+
 --------------------------------------------------------------------------------------------------------------------------------
 
 function _draw()
@@ -279,8 +485,9 @@ function _draw()
 		a:draw()
 	end
 	draw_hud()
-	debug_draw_collision_boxes()
-	print(#actors, 0,0,7)
+	--debug_draw_collision_boxes()
+	--print(#actors, 0,0,7)
+	score:draw()
 end
 
 function draw_hud()
@@ -335,6 +542,12 @@ function debug_draw_collision_boxes()
 	end
 end
 
+function draw_eye(x, y, blink)
+	pal(14,0)
+	spr(64+blink,x-4,y-4)
+	pal()
+end
+
 __gfx__
 00006000000000000b00bbb000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00007000000000000b00bbb00cccc00000006000000ccc0000000000000000000000000000000000000000000000000000000000000000000000000000000000
@@ -356,5 +569,24 @@ d77d0d77d0000000000000000001111055ccc7c55000000000000000000000000000000000000000
 000000000000000000000000aa7a0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000bbb0aaaa0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0000000000000000000000000aa00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00777770000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+077eee77007eee700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+077eee77077eee770000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+077eee77077eee77077eee7707000007000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00777770007777700077777000777770000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 __sfx__
 000100003105000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
