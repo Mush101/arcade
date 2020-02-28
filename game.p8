@@ -9,7 +9,7 @@ function object:new(a)
 	return setmetatable(a or {}, self)
 end
 
-actor = object:new({x=0, y=0, depth=0})
+actor = object:new({x=0, y=0, depth=0, collision_width=0, collision_height=0, collision_offset_x=0, collision_offset_y=0})
 
 function actor:update()
 
@@ -19,9 +19,28 @@ function actor:draw()
 
 end
 
+function actor:draw_collision_box()
+	if self.collision_width > 0 and self.collision_height > 0 then
+		local x, y = self.x+self.collision_offset_x, self.y+self.collision_offset_y
+		rect(x, y, x + self.collision_width-1, y + self.collision_height-1, 8)
+	end
+end
+
+function actor:collides(other)
+	ax1 = self.x+self.collision_offset_x
+	ay1 = self.y+self.collision_offset_y
+	ax2 = ax1 + self.collision_width
+	ay2 = ay1 + self.collision_height
+	bx1 = other.x+other.collision_offset_x
+	by1 = other.y+other.collision_offset_y
+	bx2 = bx1 + other.collision_width
+	by2 = by1 + other.collision_height
+	return boxes_overlap(ax1, ay1, ax2, ay2, bx1, by1, bx2, by2)
+end
+
 --------------------------------------------------------------------------------------------------------------------------------
 
-player = actor:new({x=63, y=100, depth = 5, mom = 0, acc = 0.3, dec = 0.2, max_mom = 1.5, shot_timer = 0, double_dist = 4})
+player = actor:new({x=63, y=100, depth = 5, mom = 0, acc = 0.3, dec = 0.2, max_mom = 1.5, shot_timer = 0, double_dist = 4, collision_width=9, collision_height=14, collision_offset_x=-4, collision_offset_y=0})
 
 function player:update()
 
@@ -135,6 +154,29 @@ end
 
 --------------------------------------------------------------------------------------------------------------------------------
 
+powerup = actor:new({speed = 0.5, collision_width=9, collision_height=8, collision_offset_x=0, collision_offset_y=0})
+
+function powerup:update()
+	self.y+=self.speed
+	if self.y >=128 then
+		self.dead = true;
+	elseif self:collides(player) then
+		charge +=1
+		self.dead = true
+	end
+end
+
+function powerup:draw()
+	if powerup_timer > 1.5 then
+		pal(12,7)
+	end
+	spr(20, self.x, self.y)
+	spr(21, self.x+8, self.y)
+	pal()
+end
+
+--------------------------------------------------------------------------------------------------------------------------------
+
 function _init()
 	actors = {}
 	add_actor(player)
@@ -148,6 +190,8 @@ function _init()
 	charge = 0
 	weapon_level = 0
 	weapon_flash_time = 0
+
+	powerup_timer = 0
 end
 
 function create_stars()
@@ -171,6 +215,9 @@ function _update60()
 	end
 	debug_weapon_level()
 	update_weapon()
+	debug_many_powerups()
+
+	animate_powerups()
 end
 
 function add_actor(a)
@@ -188,11 +235,18 @@ function update_weapon()
 	if weapon_level < 2 and charge > 6 then
 		weapon_level +=1
 		weapon_flash_time = 95
-		charge = 0
+		charge -=7
 	elseif weapon_level > 0 and charge < 0 then
 		weapon_level -=1
 		weapon_flash_time = 0
-		charge = 6
+		charge +=7
+	end
+end
+
+function animate_powerups()
+	powerup_timer+=0.1
+	if powerup_timer >= 2 then
+		powerup_timer -=2
 	end
 end
 
@@ -204,6 +258,18 @@ function debug_weapon_level()
 	end
 end
 
+function debug_many_powerups()
+	if(rnd(128) < 2) add_actor(powerup:new({x=rnd(119) + 4, y = -8}))
+end
+
+function boxes_overlap(ax1, ay1, ax2, ay2, bx1, by1, bx2, by2)
+	if (bx1 > ax2) return false
+	if (bx2 < ax1) return false
+	if (by1 > ay2) return false
+	if (by2 < ay1) return false
+	return true
+end
+
 --------------------------------------------------------------------------------------------------------------------------------
 
 function _draw()
@@ -213,6 +279,8 @@ function _draw()
 		a:draw()
 	end
 	draw_hud()
+	debug_draw_collision_boxes()
+	print(#actors, 0,0,7)
 end
 
 function draw_hud()
@@ -259,6 +327,12 @@ function sort_actors_by_depth()
 		del(actors, smallest_actor)
 	end
 	actors = new_actors
+end
+
+function debug_draw_collision_boxes()
+	for a in all(actors) do
+		a:draw_collision_box()
+	end
 end
 
 __gfx__
