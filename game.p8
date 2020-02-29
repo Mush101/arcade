@@ -44,7 +44,7 @@ end
 
 --------------------------------------------------------------------------------------------------------------------------------
 
-player = actor:new({x=63, y=100, depth = 5, mom = 0, acc = 0.3, dec = 0.2, max_mom = 1.5, shot_timer = 0, double_dist = 4, collision_width=9, collision_height=10, collision_offset_x=-4, collision_offset_y=4})
+player = actor:new({x=63, y=100, depth = 5, mom = 0, acc = 0.3, dec = 0.2, max_mom = 1.5, shot_timer = 0, double_dist = 4, collision_width=9, collision_height=10, collision_offset_x=-4, collision_offset_y=4, iframes = 0})
 
 function player:update()
 
@@ -102,15 +102,33 @@ function player:update()
 	else
 		self.shot_timer -=1
 	end
+	self.iframes = max(0,self.iframes-1)
 end
 
 function player:draw()
-	-- Double weapons
-	local weapon_sprite = 4
-	spr(weapon_sprite, self.x-self.double_dist, self.y)
-	spr(weapon_sprite, self.x+self.double_dist-7, self.y, 1, 1, true)
-	--Ship
-	sspr(0,0,9,14,self.x-4, self.y)
+	if self.iframes%4<2 then
+		-- Double weapons
+		local weapon_sprite = 4
+		spr(weapon_sprite, self.x-self.double_dist, self.y)
+		spr(weapon_sprite, self.x+self.double_dist-7, self.y, 1, 1, true)
+		--Ship
+		sspr(0,0,9,14,self.x-4, self.y)
+	end
+end
+
+function player:hit()
+	if self.iframes <=0 then
+		sfx(7)
+		self.iframes = 30
+		if weapon_level > 0 then
+			weapon_level -=1
+		else
+			dying = true
+			stage_over = true
+			intro = true
+			lives -=1
+		end
+	end
 end
 
 --------------------------------------------------------------------------------------------------------------------------------
@@ -173,6 +191,7 @@ end
 powerup = actor:new({speed = 0.5, collision_width=9, collision_height=8, collision_offset_x=0, collision_offset_y=0})
 
 function powerup:update()
+	self.interactable = not tutorial_over
 	self.y+=self.speed * game_speed
 	if self.y >=128 then
 		self.dead = true;
@@ -199,7 +218,7 @@ end
 
 --------------------------------------------------------------------------------------------------------------------------------
 
-basic_enemy = actor:new({y=-64, colour = 8, collision_width=9, collision_height=9, collision_offset_x=-4, collision_offset_y=-4, sine_timer = 0, enemy = true, points=1, actions = {{x=64,y=-8}, {x=64,y=64}, {x=64,y=56-8, shoot=true}}, final="target", action_counter=2, actions_over = false, target_timer = 0, eye_counter = 0})
+basic_enemy = actor:new({y=-64, colour = 8, collision_width=9, collision_height=9, collision_offset_x=-4, collision_offset_y=-4, sine_timer = 0, enemy = true, points=1, actions = {{x=64,y=-8}, {x=64,y=64}, {x=64,y=56-8, shoot=true}}, final="target", action_counter=1, actions_over = false, target_timer = 0, eye_counter = 0, interactable = true})
 
 function basic_enemy:update()
 	if not self.tail_pos then
@@ -216,12 +235,14 @@ function basic_enemy:update()
 		self.goal_y = self.actions[2].y
 	end
 
-	if not self.actions_over then
-		self:move()
-	elseif self.final == "go_away" then
-		self:go_away()
-	elseif self.final == "target" then
-		self:target()
+	if not dying then
+		if not self.actions_over then
+			self:move()
+		elseif self.final == "go_away" then
+			self:go_away()
+		elseif self.final == "target" then
+			self:target()
+		end
 	end
 
 	if self.preparing_shot and time_unit > 0.75 and not actions_over then
@@ -245,8 +266,16 @@ function basic_enemy:update()
 		self.sine_timer -=1
 	end
 
+	if self:collides(player) then
+		player:hit()
+	end
+
 	if self.y > 128 then
 		self.dead = true
+	end
+
+	if dying then
+		self.y += 1
 	end
 end
 
@@ -307,6 +336,7 @@ function basic_enemy:draw()
 		end
 	end
 	draw_eye(self.x,self.y,self.eye_counter)
+	--print(self.action_counter.."",self.x, self.y, 9)
 end
 
 function basic_enemy:hit()
@@ -414,19 +444,89 @@ end
 
 --------------------------------------------------------------------------------------------------------------------------------
 
-enemy_attack = actor:new({collision_width=5, collision_height=5, colour = 8})
+enemy_attack = actor:new({collision_width=5, collision_height=5, colour = 8, interactable = true})
 
 function enemy_attack:update()
 	self.y+=1 * game_speed
 	if self.y > 128 then
 		self.dead = true
 	end
+	if self:collides(player) then
+		player:hit()
+		self.dead = true
+	end
 end
 
 function enemy_attack:draw()
+	self.depth = 2 + self.y/128
 	pal(8, self.colour)
 	spr(35, self.x, self.y)
 	pal()
+end
+
+--------------------------------------------------------------------------------------------------------------------------------
+
+tutorial_message_1 = actor:new({y=32, depth = 30, life = 0, time = 6, interactable = true})
+
+function tutorial_message_1:update()
+	if self.life > self.time then
+		self.dead = true
+		tutorials_shown+=1
+	end
+end
+
+function tutorial_message_1:time_unit_over()
+	self.life+=1
+end
+
+function tutorial_message_1:draw()
+	centre_pr("use the left and",64,self.y,7)
+	centre_pr("right buttons",64,self.y+8,7)
+	centre_pr("to move.",64,self.y+16,7)
+	centre_pr("move to collect",64,self.y+32,7)
+	centre_pr("the powerups!",64,self.y+40,7)
+end
+
+tutorial_message_2 = tutorial_message_1:new({time=3})
+
+function tutorial_message_2:draw()
+	centre_pr("press either button",64,self.y+32,7)
+	centre_pr("to shoot!",64,self.y+40,7)
+end
+
+--------------------------------------------------------------------------------------------------------------------------------
+
+zone_controller = actor:new({position = 1, wait = 0})
+
+function zone_controller:set_zone(z)
+	self.zone = z
+	self.position = 1
+	self.wait = 0
+end
+
+function zone_controller:time_unit_over()
+	if self.zone then
+		if self.wait > 0 then
+			self.wait -=1
+		elseif self.position > #self.zone then
+			self.zone = nil
+			stage_over = true
+			intro = true
+		else
+			local current_instruction = self.zone[self.position]
+			if current_instruction.wait then
+				self.wait = current_instruction.wait
+			elseif current_instruction.tutorial == 1 then
+				add_actor(tutorial_message_1:new())
+			elseif current_instruction.tutorial == 2 then
+				add_actor(tutorial_message_2:new())
+			else
+				create_enemies(current_instruction)
+			end
+
+			self.position +=1
+		end
+	end
 end
 
 --------------------------------------------------------------------------------------------------------------------------------
@@ -456,6 +556,7 @@ function _init()
 	intro_black_bars = 60
 	intro_timer = 120
 	intro = true
+	stage_over = false
 
 	enemy_col_1 = 8
 	enemy_col_2 = 3
@@ -465,6 +566,47 @@ function _init()
 
 	--enable mouse for testing
 	--poke(0x5f2d, 1)
+	setup_zones()
+
+	add_actor(zone_controller)
+
+	current_zone = 1
+
+	zone_controller:set_zone(zones[current_zone])
+
+	tutorials_shown = 0
+end
+
+function setup_zones()
+	zones = {}
+	zones[1] = {
+		{tutorial = 1},
+		{{powerup = 60}},
+		{{powerup = 80}},
+		{{powerup = 90}},
+		{{powerup = 60}},
+		{{powerup = 40}},
+		{{powerup = 30}},
+		{{powerup = 60}},
+		{wait = 1},
+		new_basic_formation(3, 64, 32, -32, 8, 4, false, 0),
+		{tutorial = 2},
+		{wait = 4},
+		new_basic_formation(3, 64, 32, -32, 8, 3, false, 0),
+		{wait = 3},
+		new_basic_formation(2, 32, 32, 24, 8, 3, false, 0),
+		new_basic_formation(2, 96, 32, -24, 8, 2, false, 0),
+		{wait = 3},
+		new_basic_formation(5, 64, 32, -20, 8, 3, false, 0),
+		join({new_side_bouncer("left",16,64,32,64,3,false,1), new_side_bouncer("right",112,64,96,64,3,false,1)}),
+		{wait = 5},
+		new_basic_formation(3, 64, 64, -40, 8, 4, false, 0),
+		new_basic_formation(3, 64, 32, 32, 8, 1, "lots", 0),
+		{wait = 5},
+		new_basic_formation(5, 64, 32, -20, 8, 3, false, 0),
+		join({new_side_bouncer("left",16,64,32,64,2,false,2), new_side_bouncer("right",112,64,96,64,2,false,2)}),
+		{wait = 16}
+	}
 end
 
 function create_stars()
@@ -480,6 +622,9 @@ end
 ---------------------------------------------------------------------------------------------------------------------------------
 
 function _update60()
+
+	tutorial_over = tutorials_shown >= 2
+
 	if not update_intro() then
 		do_timing()
 	end
@@ -496,7 +641,9 @@ function _update60()
 		-- add_actor(basic_enemy:new({x=96,y=64}))
 		-- add_actor(basic_enemy:new({x=24,y=32}))
 		-- add_actor(basic_enemy:new({x=108,y=32}))
-		create_enemies(new_basic_formation(5,64,40,20,8,3,true,flr(rnd(4))))
+		--create_enemies(join( { new_basic_formation(5,64,32,20,8,3,true,flr(rnd(4))), new_basic_formation(3,64,64,-20,8,3,false,flr(rnd(4))) } ))
+
+
 	end
 	--debug_weapon_level()
 	update_weapon()
@@ -506,37 +653,44 @@ function _update60()
 
 	debug_speed()
 
-	star_speed = 2*game_speed
+	if not dying then
+		star_speed = 2*game_speed
+	else
+		star_speed = max(0, star_speed-0.1)
+	end
 
 	score:update()
 end
 
 function create_enemies(enemies)
 	for a in all(enemies) do
+		if a.powerup then
+			add_actor(powerup:new({x=a.powerup, y=-8}))
+		else
+			local enemy = basic_enemy:new()
+			enemy.actions = a.actions
+			enemy.points = a.level + 1
 
-		local enemy = basic_enemy:new()
-		enemy.actions = a.actions
-		enemy.points = a.level + 1
+			if a.level == 0 then
+				enemy.colour = enemy_col_1
+				enemy.final = "go_away"
+			elseif a.level == 1 then
+				enemy.colour = enemy_col_2
+				enemy.final = "go_away"
+			elseif a.level == 2 then
+				enemy.colour = enemy_col_3
+				enemy.final = "target"
+			elseif a.level == 3 then
+				enemy.colour = enemy_col_4
+				enemy.final = "target"
+			elseif a.level == 4 then
+				enemy.colour = special_enemy_col
+				enemy.final = "go_away"
+				enemy.points = 10
+			end
 
-		if a.level == 0 then
-			enemy.colour = enemy_col_1
-			enemy.final = "go_away"
-		elseif a.level == 1 then
-			enemy.colour = enemy_col_2
-			enemy.final = "go_away"
-		elseif a.level == 2 then
-			enemy.colour = enemy_col_3
-			enemy.final = "target"
-		elseif a.level == 3 then
-			enemy.colour = enemy_col_4
-			enemy.final = "target"
-		elseif a.level == 4 then
-			enemy.colour = special_enemy_col
-			enemy.final = "go_away"
-			enemy.points = 10
+			add_actor(enemy)
 		end
-
-		add_actor(enemy)
 
 	end
 end
@@ -558,11 +712,11 @@ function new_basic_formation(num, centre_x, centre_y, x_dist, y_dist, iterations
 		end
 
 		for j = 0, iterations + i do
-			shoot = false
-			if j == iterations+i-1 then
-				shoot = true
+			i_shoot = false
+			if shoot == "lots" or (shoot and j == iterations+i-1) then
+				i_shoot = true
 			end
-			add(actions, {x=x_pos, y=centre_y + y_dist * y_mult, shoot=shoot})
+			add(actions, {x=x_pos, y=centre_y + y_dist * y_mult, shoot=i_shoot})
 			y_mult = -y_mult
 		end
 
@@ -572,6 +726,41 @@ function new_basic_formation(num, centre_x, centre_y, x_dist, y_dist, iterations
 		add(formation, enemy)
 	end
 	return formation
+end
+
+function new_side_bouncer(side, x1, y1, x2, y2, num_times, shoot, level)
+	local formation = {}
+	local enemy = {}
+	enemy.level = level
+	local actions = {}
+	if side == "right" then
+		add(actions, {x=144,y=y1})
+	else
+		add(actions, {x=-16,y=y1})
+	end
+	local first = true
+	for i = 0, num_times do
+		local i_shoot = i == num_times-1 and shoot
+		if first then
+			add(actions, {x=x1,y=y1,shoot=i_shoot})
+		else
+			add(actions, {x=x2,y=y2,shoot=i_shoot})
+		end
+		first = not first
+	end
+	enemy.actions = actions
+	add(formation, enemy)
+	return formation
+end
+
+function join(lists)
+	new_list = {}
+	for l in all(lists) do
+		for a in all(l) do
+			add(new_list, a)
+		end
+	end
+	return new_list
 end
 
 function add_actor(a)
@@ -599,12 +788,23 @@ end
 
 function update_intro()
 	if intro then
-		intro_timer -=1
+		if stage_over then
+			intro_timer +=1
+		else
+			intro_timer -=1
+			player.x = 64
+			player.mom = 0
+		end
 		intro_black_bars = min(intro_timer, 60)
-		if intro_timer <= 0 then
+		if not stage_over and intro_timer <= 0 then
 			intro = false
-			intro_timer = 120
+			intro_timer = -120
 			num_time_units = 0
+			dying = false
+		elseif intro_timer > 120 then
+			stage_over = false
+			zone_controller:set_zone(zones[current_zone])
+			tutorials_shown = 0
 		end
 		return true
 	end
@@ -612,7 +812,11 @@ function update_intro()
 end
 
 function do_timing()
-	time_unit += 0.01 * game_speed
+	if anything_interactable() then
+		time_unit += 0.01 * game_speed
+	else
+		time_unit = flr(time_unit+1)
+	end
 	if time_unit >= 1 then
 		time_unit -=1
 		num_time_units += 1
@@ -671,6 +875,15 @@ function any_enemies()
 	return false
 end
 
+function anything_interactable()
+	for a in all(actors) do
+		if a.interactable then
+			return true
+		end
+	end
+	return false
+end
+
 --------------------------------------------------------------------------------------------------------------------------------
 
 function _draw()
@@ -683,19 +896,20 @@ function _draw()
 	--debug_draw_collision_boxes()
 	--print(#actors, 0,0,7)
 	score:draw()
-	draw_zone_intro()
+	draw_intro()
 	pr(""..num_time_units,0,0,7)
 end
 
-function draw_zone_intro()
+function draw_intro()
 	if intro then
+		clip(0,0,127,120)
 		rectfill(0,0,127,intro_black_bars,0)
 		rectfill(0,120-intro_black_bars,127,119,0)
 		if intro_timer > 60 then
 			centre_pr("zone 1", 64, 50, 7)
 			local lives_string = "`x "..lives
-			sspr(0,0,9,14,47,68)
-			pr(lives_string,61,72,7)
+			sspr(0,0,9,14,45,68)
+			pr(lives_string,59,72,7)
 		else
 			line(0,intro_black_bars, 127, intro_black_bars, 2)
 			line(0,120-intro_black_bars, 127, 120-intro_black_bars, 2)
@@ -762,7 +976,13 @@ function draw_eye(x, y, blink)
 end
 
 function centre_pr(str, x, y, col)
-	pr(str, x-3*#str, y-3, col)
+	local len = 0
+	for i=0,#str do
+		if sub(str,i,i) != "`" then
+			len+=3
+		end
+	end
+	pr(str, x-len, y-3, col)
 end
 
 -- Code by Zep
@@ -859,3 +1079,4 @@ __sfx__
 00010000337701b7702e7701777026770137701377016770187701c7702177023770217700f600116001160011600000000000000000000000000000000000000000000000000000000000000000000000000000
 000100001f0502305026050290502b0502d0502d0502c0002c0003100033000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 000300001f0501f0501f0502705027050270503305033050330500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000100002a35023350283501f360263601c36022360173601c36013360183600f370133700b370103700937000000000000000000000000000000000000000000000000000000000000000000000000000000000
