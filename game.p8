@@ -260,6 +260,11 @@ function basic_enemy:hit()
 	if not self.dead then
 		self.dead = true
 		add_actor(points_marker:new({x = self.x, y = self.y, value = self.points}))
+
+		for i =0,0.9,0.1 do
+			add_actor(death_effect:new({x=self.x, y=self.y, colour=self.colour, angle = i}))
+		end
+
 		if(rnd(6)<3) add_actor(powerup:new({x=self.x-4, y = self.y-4}))
 	end
 end
@@ -326,6 +331,30 @@ function score:draw()
 	for i = 0,5 do
 		print("0\n9\n8\n7\n6\n5\n4\n3\n2\n1\n0",self.x + 4*i, self.y-60 + self.digits[i+1] * 6, 7)
 	end
+end
+
+--------------------------------------------------------------------------------------------------------------------------------
+
+death_effect = actor:new({colour = 8, size = 4, angle = 0, dist = 0})
+
+function death_effect:update()
+	if not self.inital_x then
+		self.initial_x = self.x
+		self.initial_y = self.y
+	end
+	self.size -= 0.2
+	self.dist += 0.1
+	self.angle += 0.01
+	if self.size <=0 then
+		self.dead = true
+	end
+
+	self.x = self.initial_x + self.dist * cos(self.angle)
+	self.y = self.initial_y + self.dist * sin(self.angle)
+end
+
+function death_effect:draw()
+	circfill(self.x,self.y,self.size, self.colour)
 end
 
 --------------------------------------------------------------------------------------------------------------------------------
