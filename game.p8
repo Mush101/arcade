@@ -190,7 +190,7 @@ end
 
 --------------------------------------------------------------------------------------------------------------------------------
 
-basic_enemy = actor:new({y=-64, colour = 8, collision_width=9, collision_height=9, collision_offset_x=-4, collision_offset_y=-4, sine_timer = 0, enemy = true, points=1, actions = {{x=64,y=-8}, {x=64,y=64}}, final="target", action_counter=2, actions_over = false, target_timer = 0})
+basic_enemy = actor:new({y=-64, colour = 8, collision_width=9, collision_height=9, collision_offset_x=-4, collision_offset_y=-4, sine_timer = 0, enemy = true, points=1, actions = {{x=64,y=-8}, {x=64,y=64}, {x=64,y=56-8, shoot=true}}, final="target", action_counter=2, actions_over = false, target_timer = 0, eye_counter = 0})
 
 function basic_enemy:update()
 	if not self.tail_pos then
@@ -213,6 +213,14 @@ function basic_enemy:update()
 		self:go_away()
 	elseif self.final == "target" then
 		self:target()
+	end
+
+	if self.preparing_shot and time_unit > 0.75 and not actions_over then
+		self.eye_counter = time_unit * 16 - 12
+	elseif self.eye_counter > 0.2 then
+		self.eye_counter -= 0.2
+	else
+		self.eye_counter = 0
 	end
 
 	for i=4,1,-1 do
@@ -247,12 +255,19 @@ function basic_enemy:time_unit_over()
 	if not self.actions_over then
 		self.prev_x = self.actions[self.action_counter].x
 		self.prev_y = self.actions[self.action_counter].y
+
+		if self.actions[self.action_counter].shoot then
+			add_actor(enemy_attack:new({x=self.x-2, y=self.y-2}))
+		end
+
 		self.action_counter +=1
+
 		if self.action_counter > #self.actions then
 			self.actions_over = true
 		else
 			self.goal_x = self.actions[self.action_counter].x
 			self.goal_y = self.actions[self.action_counter].y
+			self.preparing_shot = self.actions[self.action_counter].shoot
 		end
 	end
 end
@@ -281,7 +296,7 @@ function basic_enemy:draw()
 			circfill(self.tail_pos[i].x, self.tail_pos[i].y, 4-i, self.colour)
 		end
 	end
-	draw_eye(self.x,self.y,0)
+	draw_eye(self.x,self.y,self.eye_counter)
 end
 
 function basic_enemy:hit()
@@ -313,15 +328,15 @@ function points_marker:update()
 end
 
 function points_marker:draw()
-	if self.life%2==0 then
-		local print_string = self.value.."0"
-		for i=-1,1 do
-			for j=-1,1 do
-				print(print_string, self.x-2*#print_string+i, self.y-3+j, 0)
-			end
+	--if self.life%2==0 then
+	local print_string = self.value.."0"
+	for i=-1,1 do
+		for j=-1,1 do
+			print(print_string, self.x-2*#print_string+i, self.y-3+j, 0)
 		end
-		print(print_string, self.x-2*#print_string, self.y-3, 7)
 	end
+	print(print_string, self.x-2*#print_string, self.y-3, 7)
+	--end
 end
 
 --------------------------------------------------------------------------------------------------------------------------------
@@ -384,6 +399,21 @@ end
 
 function death_effect:draw()
 	circfill(self.x,self.y,self.size, self.colour)
+end
+
+--------------------------------------------------------------------------------------------------------------------------------
+
+enemy_attack = actor:new({collision_width=5, collision_height=5})
+
+function enemy_attack:update()
+	self.y+=1 * game_speed
+	if self.y > 128 then
+		self.dead = true
+	end
+end
+
+function enemy_attack:draw()
+	spr(35, self.x, self.y)
 end
 
 --------------------------------------------------------------------------------------------------------------------------------
@@ -715,11 +745,11 @@ d77d0d77d0000000000000000001111055ccc7c55000000000000000000000000000000000000000
 09900099000000000000bbb001111000555ccc555000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000b00000000000000655555556000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000066666660000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000000000000000000000aa00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-000000000000000000000000aa7a0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000bbb0aaaa0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000000000000000000000aa00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000008880000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000088888000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000bbb088788000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000088888000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000008880000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
