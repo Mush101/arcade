@@ -392,7 +392,7 @@ end
 
 --------------------------------------------------------------------------------------------------------------------------------
 
-boss_enemy = basic_enemy:new({collision_width = 33, collision_height = 16, collision_offset_x = -16, collision_offset_y = -8, secondary_colour = 2, iframes=0, health=16, max_health=16, points=100, pupil_offset_x = 0, pupil_offset_y = 0, pupil_offset_x_goal=0, pupil_size = 3, name="crimson general"})
+boss_enemy = basic_enemy:new({collision_width = 33, collision_height = 16, collision_offset_x = -16, collision_offset_y = -8, secondary_colour = 2, iframes=0, health=16, max_health=16, points=100, pupil_offset_x = 0, pupil_offset_y = 0, pupil_offset_x_goal=0, pupil_size = 3, name="crimson general", boss=true})
 
 function boss_enemy:update()
 	if not self.prev_x then
@@ -407,13 +407,25 @@ function boss_enemy:update()
 		self.pupil_offset_x -= 1
 	end
 	self.iframes = max(0, self.iframes-1)
-	self:move()
+	if not dying then
+		self:move()
+	end
 	if self.attacking then
 		self.pupil_size+=0.5
 		if self.pupil_size >= 3 then
 			add_actor(big_enemy_attack:new({x=self.x-3+self.pupil_offset_x, y=self.y-3+self.pupil_offset_y+4, colour = self.colour}))
 			self.pupil_size = 3
 			self.attacking=false
+		end
+	end
+
+	if dying then
+		self.y += 1
+	end
+	if self.y>128 then
+		self.dead = true
+		if healthbar.tracking == self then
+			healthbar.tracking = nil
 		end
 	end
 end
@@ -434,6 +446,7 @@ function boss_enemy:hit()
 		self.health-=1
 		self.iframes = 16
 
+		sfx(4)
 		if self.health <=0 then
 			self.dead = true
 			add_actor(points_marker:new({x = self.x, y = self.y, value = self.points}))
@@ -441,7 +454,6 @@ function boss_enemy:hit()
 			for i =0,0.9,0.1 do
 				add_actor(death_effect:new({x=self.x, y=self.y, colour=self.colour, angle = i, size=6}))
 			end
-			sfx(4)
 			next_level = 1
 			for i in all(actors) do
 				if i.enemy or i.projectile then
@@ -454,6 +466,9 @@ end
 
 function boss_enemy:time_unit_over()
 	self.goal_x = flr(rnd(3)) * 32 + 32
+	if self.y < 0 then
+		self.goal_x=64
+	end
 	self.goal_y = 32
 	self.prev_x = self.x
 	self.prev_y = self.y
@@ -461,14 +476,14 @@ function boss_enemy:time_unit_over()
 		self.pupil_offset_x_goal = -4
 	elseif self.goal_x > self.x+4 then
 		self.pupil_offset_x_goal = 4
-	else
+	elseif self.y > 0 then
 		self.pupil_offset_x_goal = 0
 		self.attacking = true
 		self.pupil_size = 0
 	end
 
 	for i = 32,96,32 do
-		if abs(i-self.x) > 16 then
+		if abs(i-self.x) > 16 and self.y > 0 then
 			add_actor(basic_enemy:new({x=i,actions_over=true,points=0,final="go_away", actions = {{x=i,y=-8}, {x=i,y=64}} }))
 		end
 	end
@@ -479,13 +494,13 @@ end
 healthbar = actor:new({tracking=nil, depth=20, y=-12})
 
 function healthbar:update()
-	if self.y > -12 and self.tracking != nil and self.tracking.health<=0 then
-		self.y-=1
+	if self.y > -12 and self.tracking == nil or (self.tracking != nil and self.tracking.health<=0) then
+		self.y-=0.2
 		if self.y<=-12 then
 			self.tracking = nil
 		end
 	elseif self.y < 0 and self.tracking!=nil then
-		self.y+=1
+		self.y+=0.2
 	end
 end
 
@@ -691,6 +706,11 @@ end
 
 function zone_controller:time_unit_over()
 	if self.zone then
+		for a in all(actors) do
+			if a.boss then
+				return
+			end
+		end
 		if self.wait > 0 then
 			self.wait -=1
 		elseif self.position > #self.zone then
@@ -768,10 +788,7 @@ function _init()
 
 	next_zone_1 = 1
 	next_zone_2 = 1
-
-	local boss = boss_enemy:new({x=64,y=-32})
-	add_actor(boss)
-	add_actor(healthbar:new({tracking=boss}))
+	add_actor(healthbar)
 end
 
 function setup_zones()
@@ -844,6 +861,11 @@ function setup_zones()
 	}
 
 	zones[4] = {
+		new_side_bouncer("left",72,64,56,64,4,false,0),
+		new_side_bouncer("right",40,48,88,48,4,false,0),
+		new_side_bouncer("left",96,32,32,32,4,false,0),
+		{wait=16},
+		{{boss=1}},
 		{wait=16}
 	}
 end
@@ -911,6 +933,10 @@ function create_enemies(enemies)
 	for a in all(enemies) do
 		if a.powerup then
 			add_actor(powerup:new({x=a.powerup, y=-8}))
+		elseif a.boss == 1 then
+			local boss = boss_enemy:new({x=64,y=-32})
+			add_actor(boss)
+			healthbar.tracking = boss
 		else
 			local enemy = basic_enemy:new()
 			enemy.actions = a.actions
@@ -1081,13 +1107,13 @@ function set_zone_properties()
 	elseif current_zone == 2 then
 		star_col_1 = 7
 		star_col_2 = 14
-		next_zone_1 = 1
-		next_zone_2 = 3
+		next_zone_1 = 4
+		next_zone_2 = 1
 	elseif current_zone == 3 then
 		star_col_1 = 7
 		star_col_2 = 11
 		next_zone_1 = 1
-		next_zone_2 = 2
+		next_zone_2 = 1
 	elseif current_zone == 4 then
 		star_col_1 = 8
 		star_col_2 = 2
