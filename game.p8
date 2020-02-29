@@ -74,7 +74,7 @@ function player:update()
 	end
 
 	-- Shooting
-	if self.shot_timer <=0 then
+	if self.shot_timer <= 0 then
 		if btn(4) or btn(5) then
 			if weapon_level == 0 then
 				self.shot_timer = 20
@@ -176,6 +176,7 @@ function powerup:update()
 	elseif self:collides(player) then
 		charge +=1
 		self.dead = true
+		add_actor(points_marker:new({x = self.x+4, y = self.y+3, value = 1}))
 	end
 end
 
@@ -257,7 +258,7 @@ function basic_enemy:time_unit_over()
 		self.prev_y = self.actions[self.action_counter].y
 
 		if self.actions[self.action_counter].shoot then
-			add_actor(enemy_attack:new({x=self.x-2, y=self.y-2}))
+			add_actor(enemy_attack:new({x=self.x-2, y=self.y-2, colour = self.colour}))
 		end
 
 		self.action_counter +=1
@@ -291,6 +292,7 @@ function basic_enemy:target()
 end
 
 function basic_enemy:draw()
+	self.depth = 2 + self.y/128
 	if self.tail_pos then
 		for i = 0,4 do
 			circfill(self.tail_pos[i].x, self.tail_pos[i].y, 4-i, self.colour)
@@ -300,7 +302,7 @@ function basic_enemy:draw()
 end
 
 function basic_enemy:hit()
-	if not self.dead then
+	if not self.dead and self.y>-4 then
 		self.dead = true
 		add_actor(points_marker:new({x = self.x, y = self.y, value = self.points}))
 
@@ -403,7 +405,7 @@ end
 
 --------------------------------------------------------------------------------------------------------------------------------
 
-enemy_attack = actor:new({collision_width=5, collision_height=5})
+enemy_attack = actor:new({collision_width=5, collision_height=5, colour = 8})
 
 function enemy_attack:update()
 	self.y+=1 * game_speed
@@ -413,7 +415,9 @@ function enemy_attack:update()
 end
 
 function enemy_attack:draw()
+	pal(8, self.colour)
 	spr(35, self.x, self.y)
+	pal()
 end
 
 --------------------------------------------------------------------------------------------------------------------------------
@@ -444,6 +448,12 @@ function _init()
 	intro_timer = 120
 	intro = true
 
+	enemy_col_1 = 8
+	enemy_col_2 = 3
+	enemy_col_3 = 14
+	enemy_col_4 = 12
+	special_enemy_col = 9
+
 	--enable mouse for testing
 	--poke(0x5f2d, 1)
 end
@@ -472,11 +482,12 @@ function _update60()
 	end
 
 	if not any_enemies() and time_unit < 0.1 then
-		add_actor(basic_enemy:new())
+		-- add_actor(basic_enemy:new())
 		-- add_actor(basic_enemy:new({x=32,y=64}))
 		-- add_actor(basic_enemy:new({x=96,y=64}))
 		-- add_actor(basic_enemy:new({x=24,y=32}))
 		-- add_actor(basic_enemy:new({x=108,y=32}))
+		create_enemies(new_basic_formation(5,64,40,20,8,3,true,flr(rnd(4))))
 	end
 	--debug_weapon_level()
 	update_weapon()
@@ -489,6 +500,65 @@ function _update60()
 	star_speed = 2*game_speed
 
 	score:update()
+end
+
+function create_enemies(enemies)
+	for a in all(enemies) do
+
+		local enemy = basic_enemy:new()
+		enemy.actions = a.actions
+		enemy.points = a.level + 1
+
+		if a.level == 0 then
+			enemy.colour = enemy_col_1
+			enemy.final = "go_away"
+		elseif a.level == 1 then
+			enemy.colour = enemy_col_2
+			enemy.final = "go_away"
+		elseif a.level == 2 then
+			enemy.colour = enemy_col_3
+			enemy.final = "target"
+		elseif a.level == 3 then
+			enemy.colour = enemy_col_4
+			enemy.final = "target"
+		elseif a.level == 4 then
+			enemy.colour = special_enemy_col
+			enemy.final = "go_away"
+			enemy.points = 10
+		end
+
+		add_actor(enemy)
+
+	end
+end
+
+function new_basic_formation(num, centre_x, centre_y, x_dist, y_dist, iterations, shoot, add_level)
+	local formation = {}
+	for i = 0,num-1 do
+		local enemy = {}
+		enemy.level = add_level + i%2
+		local x_pos = centre_x - x_dist * (i-(num-1)/2)
+
+		local actions = {}
+
+		add(actions, {x=x_pos, y=-16})
+
+		local y_mult = -1
+		if i%2==0 then
+			y_mult = 1
+		end
+
+		for j = 0, iterations + i do
+			add(actions, {x=x_pos, y=centre_y + y_dist * y_mult})
+			y_mult = -y_mult
+		end
+
+
+		enemy.actions = actions
+
+		add(formation, enemy)
+	end
+	return formation
 end
 
 function add_actor(a)
