@@ -549,7 +549,11 @@ function new_basic_formation(num, centre_x, centre_y, x_dist, y_dist, iterations
 		end
 
 		for j = 0, iterations + i do
-			add(actions, {x=x_pos, y=centre_y + y_dist * y_mult})
+			shoot = false
+			if j == iterations+i-1 then
+				shoot = true
+			end
+			add(actions, {x=x_pos, y=centre_y + y_dist * y_mult, shoot=shoot})
 			y_mult = -y_mult
 		end
 
