@@ -170,7 +170,7 @@ end
 powerup = actor:new({speed = 0.5, collision_width=9, collision_height=8, collision_offset_x=0, collision_offset_y=0})
 
 function powerup:update()
-	self.y+=self.speed
+	self.y+=self.speed * game_speed
 	if self.y >=128 then
 		self.dead = true;
 	elseif self:collides(player) then
@@ -190,7 +190,7 @@ end
 
 --------------------------------------------------------------------------------------------------------------------------------
 
-basic_enemy = actor:new({colour = 8, collision_width=9, collision_height=9, collision_offset_x=-4, collision_offset_y=-4, sine_timer = 0, enemy = true, points=1})
+basic_enemy = actor:new({y=-64, colour = 8, collision_width=9, collision_height=9, collision_offset_x=-4, collision_offset_y=-4, sine_timer = 0, enemy = true, points=1, actions = {{x=64,y=-8}, {x=64,y=64}}, final="target", action_counter=2, actions_over = false, target_timer = 0})
 
 function basic_enemy:update()
 	if not self.tail_pos then
@@ -199,13 +199,21 @@ function basic_enemy:update()
 			self.tail_pos[i] = {x=self.x, y=self.y}
 		end
 		self:set_initial()
+		self.x = self.actions[1].x
+		self.y = self.actions[1].y
 		self.prev_x = self.x
 		self.prev_y = self.y
-		self.goal_x = 128-self.x
-		self.goal_y = self.y+16
+		self.goal_x = self.actions[2].x
+		self.goal_y = self.actions[2].y
 	end
 
-	self:move()
+	if not self.actions_over then
+		self:move()
+	elseif self.final == "go_away" then
+		self:go_away()
+	elseif self.final == "target" then
+		self:target()
+	end
 
 	for i=4,1,-1 do
 		self.tail_pos[i].x = self.tail_pos[i-1].x
@@ -218,6 +226,10 @@ function basic_enemy:update()
 	self.sine_timer += 0.01 * game_speed
 	if self.sine_timer >= 1 then
 		self.sine_timer -=1
+	end
+
+	if self.y > 128 then
+		self.dead = true
 	end
 end
 
@@ -232,18 +244,34 @@ function basic_enemy:move()
 end
 
 function basic_enemy:time_unit_over()
-	local x, y = self.prev_x, self.prev_y
-	self.prev_x = self.goal_x
-	self.prev_y = self.goal_y
-	self.goal_x = x
-	self.goal_y = y
+	if not self.actions_over then
+		self.prev_x = self.actions[self.action_counter].x
+		self.prev_y = self.actions[self.action_counter].y
+		self.action_counter +=1
+		if self.action_counter > #self.actions then
+			self.actions_over = true
+		else
+			self.goal_x = self.actions[self.action_counter].x
+			self.goal_y = self.actions[self.action_counter].y
+		end
+	end
 end
 
 function basic_enemy:go_away()
 	self.y+=1 * game_speed
-	self.x = self.init_x + 16 * sin(self.sine_timer)
-	if self.y > 128 then
-		self.y = -16
+	self.x = self.goal_x + 16 * sin(time_unit)
+end
+
+function basic_enemy:target()
+	if self.target_timer < 50 then
+		self.target_x = (player.x-self.x)/10
+		self.target_y = (player.y+8-self.y)/10
+		self.x -= 0.05 * game_speed * self.target_x
+		self.y -= 0.05 * game_speed * self.target_y
+		self.target_timer+=game_speed
+	else
+		self.x += 0.5 * game_speed * self.target_x
+		self.y += 0.5 * game_speed * self.target_y
 	end
 end
 
@@ -331,6 +359,7 @@ function score:draw()
 	for i = 0,5 do
 		print("0\n9\n8\n7\n6\n5\n4\n3\n2\n1\n0",self.x + 4*i, self.y-60 + self.digits[i+1] * 6, 7)
 	end
+	clip()
 end
 
 --------------------------------------------------------------------------------------------------------------------------------
@@ -377,6 +406,13 @@ function _init()
 
 	time_unit = 0
 	slerp_time_unit = 0
+	num_time_units = 0
+
+	lives = 7
+
+	intro_black_bars = 60
+	intro_timer = 120
+	intro = true
 
 	--enable mouse for testing
 	--poke(0x5f2d, 1)
@@ -395,6 +431,9 @@ end
 ---------------------------------------------------------------------------------------------------------------------------------
 
 function _update60()
+	if not update_intro() then
+		do_timing()
+	end
 	for a in all(actors) do
 		a:update()
 		if a.dead then
@@ -402,11 +441,12 @@ function _update60()
 		end
 	end
 
-	if not any_enemies() and time_unit < 0.1then
-		add_actor(basic_enemy:new({x=32,y=64}))
-		add_actor(basic_enemy:new({x=96,y=64}))
-		add_actor(basic_enemy:new({x=24,y=32}))
-		add_actor(basic_enemy:new({x=108,y=32}))
+	if not any_enemies() and time_unit < 0.1 then
+		add_actor(basic_enemy:new())
+		-- add_actor(basic_enemy:new({x=32,y=64}))
+		-- add_actor(basic_enemy:new({x=96,y=64}))
+		-- add_actor(basic_enemy:new({x=24,y=32}))
+		-- add_actor(basic_enemy:new({x=108,y=32}))
 	end
 	--debug_weapon_level()
 	update_weapon()
@@ -415,8 +455,6 @@ function _update60()
 	animate_powerups()
 
 	debug_speed()
-
-	do_timing()
 
 	star_speed = 2*game_speed
 
@@ -446,15 +484,30 @@ function update_weapon()
 	end
 end
 
+function update_intro()
+	if intro then
+		intro_timer -=1
+		intro_black_bars = min(intro_timer, 60)
+		if intro_timer <= 0 then
+			intro = false
+			intro_timer = 120
+			num_time_units = 0
+		end
+		return true
+	end
+	return false
+end
+
 function do_timing()
 	time_unit += 0.01 * game_speed
 	if time_unit >= 1 then
 		time_unit -=1
+		num_time_units += 1
 		for a in all(actors) do
 			a:time_unit_over()
 		end
 	end
-	slerp_time_unit = (sin(time_unit/2)+1)/2
+	slerp_time_unit = 1-(cos(time_unit/2)+1)/2
 end
 
 function animate_powerups()
@@ -517,6 +570,24 @@ function _draw()
 	--debug_draw_collision_boxes()
 	--print(#actors, 0,0,7)
 	score:draw()
+	draw_zone_intro()
+	pr(""..num_time_units,0,0,7)
+end
+
+function draw_zone_intro()
+	if intro then
+		rectfill(0,0,127,intro_black_bars,0)
+		rectfill(0,120-intro_black_bars,127,119,0)
+		if intro_timer > 60 then
+			centre_pr("zone 1", 64, 50, 7)
+			local lives_string = "`x "..lives
+			sspr(0,0,9,14,47,68)
+			pr(lives_string,61,72,7)
+		else
+			line(0,intro_black_bars, 127, intro_black_bars, 2)
+			line(0,120-intro_black_bars, 127, 120-intro_black_bars, 2)
+		end
+	end
 end
 
 function draw_hud()
@@ -575,6 +646,56 @@ function draw_eye(x, y, blink)
 	pal(14,0)
 	spr(64+blink,x-4,y-4)
 	pal()
+end
+
+function centre_pr(str, x, y, col)
+	pr(str, x-3*#str, y-3, col)
+end
+
+-- Code by Zep
+
+fdat = [[  0000.0000! 739c.e038" 5280.0000# 02be.afa8$ 23e8.e2f8% 0674.45cc& 6414.c934' 2100.0000( 3318.c618) 618c.6330* 012a.ea90+ 0109.f210, 0000.0230- 0000.e000. 0000.0030/ 3198.cc600 fef7.bdfc1 f18c.637c2 f8ff.8c7c3 f8de.31fc4 defe.318c5 fe3e.31fc6 fe3f.bdfc7 f8cc.c6308 feff.bdfc9 fefe.31fc: 0300.0600; 0300.0660< 0199.8618= 001c.0700> 030c.3330? f0c6.e030@ 746f.783ca 76f7.fdecb f6fd.bdf8c 76f1.8db8d f6f7.bdf8e 7e3d.8c3cf 7e3d.8c60g 7e31.bdbch deff.bdeci f318.c678j f98c.6370k def9.bdecl c631.8c7cm dfff.bdecn f6f7.bdeco 76f7.bdb8p f6f7.ec60q 76f7.bf3cr f6f7.cdecs 7e1c.31f8t fb18.c630u def7.bdb8v def7.b710w def7.ffecx dec9.bdecy defe.31f8z f8cc.cc7c[ 7318.c638\ 630c.618c] 718c.6338^ 2280.0000_ 0000.007c``4100.0000`a001f.bdf4`bc63d.bdfc`c001f.8c3c`d18df.bdbc`e001d.be3c`f3b19.f630`g7ef6.f1fa`hc63d.bdec`i6018.c618`j318c.6372`kc6f5.cd6c`l6318.c618`m0015.fdec`n003d.bdec`o001f.bdf8`pf6f7.ec62`q7ef6.f18e`r001d.bc60`s001f.c3f8`t633c.c618`u0037.bdbc`v0037.b510`w0037.bfa8`x0036.edec`ydef6.f1ba`z003e.667c{ 0188.c218| 0108.4210} 0184.3118~ 02a8.0000`*013e.e500]]
+cmap={}
+for i=0,#fdat/11 do
+ local p=1+i*11
+ cmap[sub(fdat,p,p+1)]=
+  tonum("0x"..sub(fdat,p+2,p+10))
+end
+
+function pr(str,sx,sy,col)
+ local sx0=sx
+ local p=1
+ while (p <= #str) do
+  local c=sub(str,p,p)
+  local v
+
+  if (c=="\n") then
+   -- linebreak
+   sy+=9 sx=sx0
+  else
+      -- single (a)
+      v = cmap[c.." "]
+      if not v then
+       -- double (`a)
+       v= cmap[sub(str,p,p+1)]
+       p+=1
+      end
+
+   --adjust height
+   local sy1=sy
+   if (band(v,0x0.0002)>0)sy1+=2
+
+   -- draw pixels
+   for y=sy1,sy1+5 do
+       for x=sx,sx+4 do
+        if (band(v,0x8000)<0) pset(x,y,col)
+        v=rotl(v,1)
+       end
+      end
+      sx+=6
+  end
+  p+=1
+ end
 end
 
 __gfx__
