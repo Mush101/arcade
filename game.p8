@@ -61,6 +61,16 @@ function player:update()
 		self.mom = 0
 	end
 
+	-- End of stage (either lose or win)
+	if dying then
+		self.y+=0.5
+		self.mom = 0
+	elseif stage_over then
+		self.y-=1
+	elseif self.y > 100 then
+		self.y-=1
+	end
+
 	self.x += self.mom
 
 	-- Screen clamping
@@ -119,7 +129,7 @@ end
 function player:hit()
 	if self.iframes <=0 then
 		sfx(7)
-		self.iframes = 30
+		self.iframes = 60
 		if weapon_level > 0 then
 			weapon_level -=1
 		else
@@ -653,10 +663,12 @@ function _update60()
 
 	debug_speed()
 
-	if not dying then
-		star_speed = 2*game_speed
-	else
+	if dying then
 		star_speed = max(0, star_speed-0.1)
+	elseif stage_over then
+		star_speed +=0.2
+	else
+		star_speed = 2*game_speed
 	end
 
 	score:update()
@@ -794,6 +806,7 @@ function update_intro()
 			intro_timer -=1
 			player.x = 64
 			player.mom = 0
+			player.y=128
 		end
 		intro_black_bars = min(intro_timer, 60)
 		if not stage_over and intro_timer <= 0 then
