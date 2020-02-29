@@ -95,7 +95,7 @@ function player:update()
 	end
 
 	-- Shooting
-	if self.shot_timer <= 0 and not warp_zone then
+	if self.shot_timer <= 0 and not warp_zone and not intro then
 		if btn(4) or btn(5) then
 			if weapon_level == 0 then
 				self.shot_timer = 20
@@ -155,10 +155,10 @@ end
 
 --------------------------------------------------------------------------------------------------------------------------------
 
-star = actor:new({colour = 7, depth = -20})
+star = actor:new({colour = 7, depth = -20, background})
 
 function star:update()
-	if self.colour == 7 then
+	if not self.background then
 		self.y += star_speed
 	else
 		self.y += star_speed/2
@@ -167,6 +167,11 @@ function star:update()
 	if self.y >= 128 then
 		self.y -=128
 		self.x = rnd(127)
+	end
+	if self.background then
+		self.colour = star_col_2
+	else
+		self.colour = star_col_1
 	end
 end
 
@@ -213,14 +218,16 @@ end
 powerup = actor:new({speed = 0.5, collision_width=9, collision_height=8, collision_offset_x=0, collision_offset_y=0})
 
 function powerup:update()
-	self.interactable = not tutorial_over
+	self.interactable = not tutorial_over and current_zone == 1
 	self.y+=self.speed * game_speed
 	if self.y >=128 then
 		self.dead = true;
 	elseif self:collides(player) then
 		charge +=1
 		self.dead = true
-		add_actor(points_marker:new({x = self.x+4, y = self.y+3, value = 1}))
+		if not self.no_points then
+			add_actor(points_marker:new({x = self.x+4, y = self.y+3, value = 1}))
+		end
 		if charge >= max_charge then
 			sfx(6)
 		else
@@ -264,6 +271,8 @@ function basic_enemy:update()
 			self:go_away()
 		elseif self.final == "target" then
 			self:target()
+		elseif self.final == "vanish" then
+			self.dead = true
 		end
 	end
 
@@ -364,14 +373,130 @@ end
 function basic_enemy:hit()
 	if not self.dead and self.y>-4 then
 		self.dead = true
-		add_actor(points_marker:new({x = self.x, y = self.y, value = self.points}))
+		if self.points!=0 then
+			add_actor(points_marker:new({x = self.x, y = self.y, value = self.points}))
+		end
 
 		for i =0,0.9,0.1 do
 			add_actor(death_effect:new({x=self.x, y=self.y, colour=self.colour, angle = i}))
 		end
 
-		if(rnd(6)<3) add_actor(powerup:new({x=self.x-4, y = self.y-4}))
+		local no_points = false
+		if self.points == 0 then
+			no_points = true
+		end
+		if(rnd(6)<3) add_actor(powerup:new({x=self.x-4, y = self.y-4, no_points = no_points}))
 		sfx(4)
+	end
+end
+
+--------------------------------------------------------------------------------------------------------------------------------
+
+boss_enemy = basic_enemy:new({collision_width = 33, collision_height = 16, collision_offset_x = -16, collision_offset_y = -8, secondary_colour = 2, iframes=0, health=16, max_health=16, points=100, pupil_offset_x = 0, pupil_offset_y = 0, pupil_offset_x_goal=0, pupil_size = 3, name="crimson general"})
+
+function boss_enemy:update()
+	if not self.prev_x then
+		self.prev_x = self.x
+		self.prev_y = self.y
+		self.goal_x = self.x
+		self.goal_y = self.y
+	end
+	if self.pupil_offset_x < self.pupil_offset_x_goal then
+		self.pupil_offset_x += 1
+	elseif self.pupil_offset_x > self.pupil_offset_x_goal then
+		self.pupil_offset_x -= 1
+	end
+	self.iframes = max(0, self.iframes-1)
+	self:move()
+	if self.attacking then
+		self.pupil_size+=0.5
+		if self.pupil_size >= 3 then
+			add_actor(big_enemy_attack:new({x=self.x-3+self.pupil_offset_x, y=self.y-3+self.pupil_offset_y+4, colour = self.colour}))
+			self.pupil_size = 3
+			self.attacking=false
+		end
+	end
+end
+
+function boss_enemy:draw()
+	if self.iframes%4<2 then
+		circfill(self.x, self.y, 16, self.colour)
+		sspr(0, 40, 32, 16, self.x-16, self.y-4)
+		sspr(32, 40, 32, 16, self.x-16, self.y-9)
+		sspr(32, 40, 32, 16, self.x-16, self.y+4, 32, 16, false, true)
+		circ(self.x, self.y, 16, self.secondary_colour)
+		circfill(self.x+self.pupil_offset_x, self.y+4+self.pupil_offset_y, self.pupil_size, 0)
+	end
+end
+
+function boss_enemy:hit()
+	if not self.dead and self.y>-4 and self.iframes <=0 then
+		self.health-=1
+		self.iframes = 16
+
+		if self.health <=0 then
+			self.dead = true
+			add_actor(points_marker:new({x = self.x, y = self.y, value = self.points}))
+
+			for i =0,0.9,0.1 do
+				add_actor(death_effect:new({x=self.x, y=self.y, colour=self.colour, angle = i, size=6}))
+			end
+			sfx(4)
+			next_level = 1
+			for i in all(actors) do
+				if i.enemy or i.projectile then
+					i.dead = true
+				end
+			end
+		end
+	end
+end
+
+function boss_enemy:time_unit_over()
+	self.goal_x = flr(rnd(3)) * 32 + 32
+	self.goal_y = 32
+	self.prev_x = self.x
+	self.prev_y = self.y
+	if self.goal_x < self.x-4 then
+		self.pupil_offset_x_goal = -4
+	elseif self.goal_x > self.x+4 then
+		self.pupil_offset_x_goal = 4
+	else
+		self.pupil_offset_x_goal = 0
+		self.attacking = true
+		self.pupil_size = 0
+	end
+
+	for i = 32,96,32 do
+		if abs(i-self.x) > 16 then
+			add_actor(basic_enemy:new({x=i,actions_over=true,points=0,final="go_away", actions = {{x=i,y=-8}, {x=i,y=64}} }))
+		end
+	end
+end
+
+--------------------------------------------------------------------------------------------------------------------------------
+
+healthbar = actor:new({tracking=nil, depth=20, y=-12})
+
+function healthbar:update()
+	if self.y > -12 and self.tracking != nil and self.tracking.health<=0 then
+		self.y-=1
+		if self.y<=-12 then
+			self.tracking = nil
+		end
+	elseif self.y < 0 and self.tracking!=nil then
+		self.y+=1
+	end
+end
+
+function healthbar:draw()
+	if self.tracking!=nil then
+		rectfill(0,self.y,127,self.y+4,5)
+		rectfill(1,self.y+1,126,self.y+3,2)
+		if self.tracking.health>0 then
+			rectfill(1,self.y+1,126*(self.tracking.health/self.tracking.max_health),self.y+3,8)
+		end
+		centre_pr(self.tracking.name,64,self.y+9,7)
 	end
 end
 
@@ -380,7 +505,7 @@ end
 points_marker = actor:new({value = 1, life = 0, depth = 50})
 
 function points_marker:update()
-	if self.life == 0 then
+	if self.life == 0 and not dying then
 		score:add(self.value)
 	end
 	self.life+=1
@@ -391,15 +516,15 @@ function points_marker:update()
 end
 
 function points_marker:draw()
-	--if self.life%2==0 then
-	local print_string = self.value.."0"
-	for i=-1,1 do
-		for j=-1,1 do
-			print(print_string, self.x-2*#print_string+i, self.y-3+j, 0)
+	if not dying then
+		local print_string = self.value.."0"
+		for i=-1,1 do
+			for j=-1,1 do
+				print(print_string, self.x-2*#print_string+i, self.y-3+j, 0)
+			end
 		end
+		print(print_string, self.x-2*#print_string, self.y-3, 7)
 	end
-	print(print_string, self.x-2*#print_string, self.y-3, 7)
-	--end
 end
 
 --------------------------------------------------------------------------------------------------------------------------------
@@ -491,7 +616,7 @@ end
 
 --------------------------------------------------------------------------------------------------------------------------------
 
-enemy_attack = actor:new({collision_width=5, collision_height=5, colour = 8, interactable = true})
+enemy_attack = actor:new({collision_width=5, collision_height=5, colour = 8, interactable = true, projectile = true})
 
 function enemy_attack:update()
 	self.y+=1 * game_speed
@@ -504,10 +629,23 @@ function enemy_attack:update()
 	end
 end
 
+function enemy_attack:hit()
+
+end
+
 function enemy_attack:draw()
 	self.depth = 2 + self.y/128
 	pal(8, self.colour)
 	spr(35, self.x, self.y)
+	pal()
+end
+
+big_enemy_attack = enemy_attack:new({collision_width=7, collision_height=7, colour = 8, interactable = true})
+
+function big_enemy_attack:draw()
+	self.depth = 2 + self.y/128
+	pal(8, self.colour)
+	spr(36, self.x, self.y)
 	pal()
 end
 
@@ -585,6 +723,8 @@ function _init()
 
 	game_speed = 1
 	star_speed = 2
+	star_col_1 = 0
+	star_col_2 = 0
 
 	create_stars()
 
@@ -618,7 +758,7 @@ function _init()
 
 	add_actor(zone_controller)
 
-	current_zone = 1
+	current_zone = 4
 
 	zone_controller:set_zone(zones[current_zone])
 
@@ -628,6 +768,10 @@ function _init()
 
 	next_zone_1 = 1
 	next_zone_2 = 1
+
+	local boss = boss_enemy:new({x=64,y=-32})
+	add_actor(boss)
+	add_actor(healthbar:new({tracking=boss}))
 end
 
 function setup_zones()
@@ -663,6 +807,45 @@ function setup_zones()
 	-- zones[1] = {
 	-- 	{wait=1}
 	-- }
+	zones[2] = {
+		new_basic_formation(5, 64, 32, -24, 8, 2, true, 0),
+		{wait=7},
+		new_side_bouncer("left",32,32,96,32,4,"lots",2),
+		new_side_bouncer("right",96,64,32,64,2,"lots",3),
+		{wait=7},
+		new_basic_formation(5, 64, 64, -24, 8, 6, false, 0),
+		new_side_bouncer("left",32,32,64,32,4,"lots",2),
+		new_side_bouncer("right",96,32,64,32,3,"lots",3),
+		{wait=7},
+		join({new_side_bouncer("left",32,32,96,32,4,"lots",2),new_side_bouncer("right",96,48,32,64,2,"lots",3)}),
+		new_basic_formation(3, 64, 64, -24, 8, 2, true, 0),
+		{wait=7},
+		new_side_bouncer("left",256,16,-128,16,0,false,4),
+		{wait=7},
+		new_basic_formation(5, 64, 64, -24, 8, 4, "lots", 0),
+		{wait=16}
+	}
+
+	zones[3] = {
+		new_basic_formation(5, 64, 32, -24, 8, 2, true, 0),
+		{wait=7},
+		join({new_side_bouncer("left",32,64,32,32,4,"lots",2),new_side_bouncer("right",96,32,96,64,4,"lots",3)}),
+		{wait=7},
+		join({new_side_bouncer("left",32,32,32,64,4,"lots",3), new_side_bouncer("right",96,64,96,32,4,"lots",3)}),
+		join({new_side_bouncer("left",32,32,96,32,3,false,2),new_side_bouncer("right",96,64,32,64,3,false,2)}),
+		{wait=7},
+		new_side_bouncer("left",256,16,-128,16,0,false,4),
+		{wait=7},
+		new_basic_formation(3, 64, 64, -24, 8, 2, true, 0),
+		join({new_side_bouncer("left",32,32,96,32,4,"lots",2),new_side_bouncer("right",96,48,32,64,2,"lots",3)}),
+		{wait=3},
+		new_basic_formation(3, 64, 64, -24, 8, 2, true, 0),
+		{wait=16}
+	}
+
+	zones[4] = {
+		{wait=16}
+	}
 end
 
 function create_stars()
@@ -671,7 +854,7 @@ function create_stars()
 	end
 
 	for i = 0,127,8 do
-		add_actor(star:new({x=rnd(127), y=i, colour=12, depth=-21}))
+		add_actor(star:new({x=rnd(127), y=i, background = true, depth=-21}))
 	end
 end
 
@@ -680,6 +863,8 @@ end
 function _update60()
 
 	tutorial_over = tutorials_shown >= 2
+
+	set_zone_properties()
 
 	if not update_intro() then
 		do_timing()
@@ -707,7 +892,7 @@ function _update60()
 
 	animate_powerups()
 
-	debug_speed()
+	--debug_speed()
 
 	if dying then
 		star_speed = max(0, star_speed-0.1)
@@ -745,8 +930,8 @@ function create_enemies(enemies)
 				enemy.final = "target"
 			elseif a.level == 4 then
 				enemy.colour = special_enemy_col
-				enemy.final = "go_away"
-				enemy.points = 10
+				enemy.final = "vanish"
+				enemy.points = 50
 			end
 
 			add_actor(enemy)
@@ -800,7 +985,7 @@ function new_side_bouncer(side, x1, y1, x2, y2, num_times, shoot, level)
 	end
 	local first = true
 	for i = 0, num_times do
-		local i_shoot = i == num_times-1 and shoot
+		local i_shoot = shoot=="lots" or (i == num_times-1 and shoot)
 		if first then
 			add(actions, {x=x1,y=y1,shoot=i_shoot})
 		else
@@ -885,6 +1070,30 @@ function update_intro()
 		return true
 	end
 	return false
+end
+
+function set_zone_properties()
+	if current_zone == 1 then
+		star_col_1 = 7
+		star_col_2 = 12
+		next_zone_1 = 2
+		next_zone_2 = 3
+	elseif current_zone == 2 then
+		star_col_1 = 7
+		star_col_2 = 14
+		next_zone_1 = 1
+		next_zone_2 = 3
+	elseif current_zone == 3 then
+		star_col_1 = 7
+		star_col_2 = 11
+		next_zone_1 = 1
+		next_zone_2 = 2
+	elseif current_zone == 4 then
+		star_col_1 = 8
+		star_col_2 = 2
+		next_zone_1 = 1
+		next_zone_2 = 1
+	end
 end
 
 function do_timing()
@@ -976,14 +1185,16 @@ function _draw()
 	--print(#actors, 0,0,7)
 	score:draw()
 	draw_intro()
-	pr(""..num_time_units,0,0,7)
+	--pr(""..num_time_units,0,0,7)
 end
 
 function draw_intro()
 	if intro then
-		clip(0,0,127,120)
-		rectfill(0,0,127,intro_black_bars,0)
-		rectfill(0,120-intro_black_bars,127,119,0)
+		clip(0,0,128,120)
+		if intro_black_bars>0 then
+			rectfill(0,0,127,intro_black_bars,0)
+			rectfill(0,120-intro_black_bars,127,119,0)
+		end
 		if intro_timer > 60 then
 			if next_zone then
 				centre_pr("zone "..next_zone, 64, 50, 7)
@@ -1145,13 +1356,13 @@ d77d0d77d0000000000000000001111055ccc7c55000000000000000000000000000000000000000
 09900099000000000000bbb001111000555ccc555000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000b00000000000000655555556000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000066666660000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000008880000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000088888000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000bbb088788000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000088888000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000008880000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000008880000008880000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000088888000088888000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000bbb088788000888888800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000088888000888788800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000008880000888888800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000088888000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000008880000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
@@ -1168,6 +1379,22 @@ d77d0d77d0000000000000000001111055ccc7c55000000000000000000000000000000000000000
 077eee77077eee770000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 077eee77077eee77077eee7707000007000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00777770007777700077777000777770000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000002222222000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000227777777220000000000000000000000000222000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000022777777777772200000000000000000200000222000002000000000000000000000000000000000000000000000000000000000000000000000000
+00000000277777777777777720000000000000000220002222200022000000000000000000000000000000000000000000000000000000000000000000000000
+00000002777777777777777772000000000000000222002222200222000000000000000000000000000000000000000000000000000000000000000000000000
+00000027777777777777777777200000000020000222200000002222000020000000000000000000000000000000000000000000000000000000000000000000
+00000277777777777777777777720000000022000220000000000022000220000000000000000000000000000000000000000000000000000000000000000000
+00000277777777777777777777720000000022200000000000000000002220000000000000000000000000000000000000000000000000000000000000000000
+00000027777777777777777777200000000022220000000000000000022220000000000000000000000000000000000000000000000000000000000000000000
+00000002777777777777777772000000000022200000000000000000002220000000000000000000000000000000000000000000000000000000000000000000
+00000000277777777777777720000000000002000000000000000000000200000000000000000000000000000000000000000000000000000000000000000000
+00000000022777777777772200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000227777777220000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000002222222000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 __sfx__
 000100003105000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0001000024350223501f3500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
