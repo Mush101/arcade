@@ -67,6 +67,17 @@ function player:update()
 		self.mom = 0
 	elseif stage_over then
 		self.y-=1
+		if portal1 then
+			self.mom = 0
+			if self.y<56 then
+				self.y = 56
+				if self.iframes == 0 then
+					self.iframes = 40
+				elseif self.iframes == 11 then
+					self.iframes = 12
+				end
+			end
+		end
 	elseif self.y > 100 then
 		self.y-=1
 	end
@@ -84,7 +95,7 @@ function player:update()
 	end
 
 	-- Shooting
-	if self.shot_timer <= 0 then
+	if self.shot_timer <= 0 and not warp_zone then
 		if btn(4) or btn(5) then
 			if weapon_level == 0 then
 				self.shot_timer = 20
@@ -137,6 +148,7 @@ function player:hit()
 			stage_over = true
 			intro = true
 			lives -=1
+			next_zone = current_zone
 		end
 	end
 end
@@ -333,8 +345,8 @@ function basic_enemy:target()
 		self.y -= 0.05 * game_speed * self.target_y
 		self.target_timer+=game_speed
 	else
-		self.x += 0.5 * game_speed * self.target_x
-		self.y += 0.5 * game_speed * self.target_y
+		self.x += 0.2 * game_speed * self.target_x
+		self.y += 0.2 * game_speed * self.target_y
 	end
 end
 
@@ -430,15 +442,15 @@ end
 
 --------------------------------------------------------------------------------------------------------------------------------
 
-death_effect = actor:new({colour = 8, size = 4, angle = 0, dist = 0})
+death_effect = actor:new({colour = 8, size = 4, angle = 0, dist = 0, dist_speed = 0.1, size_change=0.2})
 
 function death_effect:update()
 	if not self.inital_x then
 		self.initial_x = self.x
 		self.initial_y = self.y
 	end
-	self.size -= 0.2
-	self.dist += 0.1
+	self.size -= self.size_change
+	self.dist += self.dist_speed
 	self.angle += 0.01
 	if self.size <=0 then
 		self.dead = true
@@ -450,6 +462,31 @@ end
 
 function death_effect:draw()
 	circfill(self.x,self.y,self.size, self.colour)
+end
+
+portal_particle = death_effect:new({dist_speed = -0.1})
+
+--------------------------------------------------------------------------------------------------------------------------------
+
+portal = actor:new({angle = 0, depth=-1})
+
+function portal:update()
+	self.angle+=0.26
+	self.angle = self.angle%1
+	for i =0,0 do
+		add_actor(portal_particle:new({x=self.x + 16*cos(self.angle+i), y=self.y + 16*sin(self.angle+i),angle = self.angle+i, colour = 1, size_change = 0.15}))
+	end
+	self.active = abs(player.x - self.x) < 16
+	if self.active and (btnp(4) or btnp(5)) then
+		stage_over = true
+		intro = true
+		--warp_zone = false
+		next_zone = self.next_zone
+	end
+end
+
+function portal:draw()
+	circfill(self.x,self.y,9,0)
 end
 
 --------------------------------------------------------------------------------------------------------------------------------
@@ -522,6 +559,7 @@ function zone_controller:time_unit_over()
 			self.zone = nil
 			stage_over = true
 			intro = true
+			warp_zone = true
 		else
 			local current_instruction = self.zone[self.position]
 			if current_instruction.wait then
@@ -561,7 +599,7 @@ function _init()
 	slerp_time_unit = 0
 	num_time_units = 0
 
-	lives = 7
+	lives = 3
 
 	intro_black_bars = 60
 	intro_timer = 120
@@ -585,6 +623,11 @@ function _init()
 	zone_controller:set_zone(zones[current_zone])
 
 	tutorials_shown = 0
+
+	warp_zone = false
+
+	next_zone_1 = 1
+	next_zone_2 = 1
 end
 
 function setup_zones()
@@ -617,14 +660,17 @@ function setup_zones()
 		join({new_side_bouncer("left",16,64,32,64,2,false,2), new_side_bouncer("right",112,64,96,64,2,false,2)}),
 		{wait = 16}
 	}
+	-- zones[1] = {
+	-- 	{wait=1}
+	-- }
 end
 
 function create_stars()
-	for i = 0,128,8 do
+	for i = 0,127,8 do
 		add_actor(star:new({x=rnd(127), y=i}))
 	end
 
-	for i = 0,128,8 do
+	for i = 0,127,8 do
 		add_actor(star:new({x=rnd(127), y=i, colour=12, depth=-21}))
 	end
 end
@@ -665,8 +711,10 @@ function _update60()
 
 	if dying then
 		star_speed = max(0, star_speed-0.1)
-	elseif stage_over then
+	elseif stage_over and not next_zone then
 		star_speed +=0.2
+	elseif warp_zone then
+		star_speed = 0.5
 	else
 		star_speed = 2*game_speed
 	end
@@ -814,9 +862,24 @@ function update_intro()
 			intro_timer = -120
 			num_time_units = 0
 			dying = false
+			if warp_zone and not next_zone then
+				portal1 = portal:new({x=32,y=60, next_zone = next_zone_1})
+				portal2 = portal:new({x=96,y=60, angle=0.125, next_zone = next_zone_2})
+				add_actor(portal1)
+				add_actor(portal2)
+			end
 		elseif intro_timer > 120 then
 			stage_over = false
-			zone_controller:set_zone(zones[current_zone])
+			if (portal1) portal1.dead = true
+			if (portal2) portal2.dead = true
+			portal1 = nil
+			portal2 = nil
+			if next_zone then
+				zone_controller:set_zone(zones[next_zone])
+				current_zone = next_zone
+				next_zone = nil
+				warp_zone = false
+			end
 			tutorials_shown = 0
 		end
 		return true
@@ -905,6 +968,9 @@ function _draw()
 	for a in all(actors) do
 		a:draw()
 	end
+	if warp_zone and not stage_over then
+		draw_warp_zone()
+	end
 	draw_hud()
 	--debug_draw_collision_boxes()
 	--print(#actors, 0,0,7)
@@ -919,14 +985,32 @@ function draw_intro()
 		rectfill(0,0,127,intro_black_bars,0)
 		rectfill(0,120-intro_black_bars,127,119,0)
 		if intro_timer > 60 then
-			centre_pr("zone 1", 64, 50, 7)
+			if next_zone then
+				centre_pr("zone "..next_zone, 64, 50, 7)
+			elseif warp_zone then
+				centre_pr("warp zone", 64, 50, 7)
+			else
+				centre_pr("zone "..current_zone, 64, 50, 7)
+			end
 			local lives_string = "`x "..lives
-			sspr(0,0,9,14,45,68)
-			pr(lives_string,59,72,7)
+			sspr(0,0,9,14,47,68)
+			pr(lives_string,61,72,7)
 		else
 			line(0,intro_black_bars, 127, intro_black_bars, 2)
 			line(0,120-intro_black_bars, 127, 120-intro_black_bars, 2)
 		end
+	end
+end
+
+function draw_warp_zone()
+	centre_pr("which way now?", 64, 16, 7)
+	if portal1 and portal2 then
+		colour1, colour2 = 6, 6
+		if (portal1.active) colour1 = 12
+		if (portal2.active) colour2 = 12
+		centre_pr("zone "..next_zone_1, 32, 32, colour1)
+		centre_pr("zone "..next_zone_2, 96, 32, colour2)
+		if (portal1.active or portal2.active) centre_pr("push button", 64, 88, 7)
 	end
 end
 
@@ -989,13 +1073,13 @@ function draw_eye(x, y, blink)
 end
 
 function centre_pr(str, x, y, col)
-	local len = 0
-	for i=0,#str do
-		if sub(str,i,i) != "`" then
-			len+=3
-		end
-	end
-	pr(str, x-len, y-3, col)
+	-- local len = 0
+	-- for i=0,#str do
+	-- 	if sub(str,i,i) != "`" then
+	-- 		len+=3
+	-- 	end
+	-- end
+	pr(str, x-#str*3, y-3, col)
 end
 
 -- Code by Zep
