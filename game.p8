@@ -879,7 +879,7 @@ function portal:update()
 		--warp_zone = false
 		next_zone = self.next_zone
 		if self.next_zone == 1 then
-			game_speed += 0.25
+			game_speed += 0.5
 		end
 		sfx(10)
 	end
@@ -1011,8 +1011,6 @@ function _init()
 
 	actors = {}
 	add_actor(player)
-
-	game_speed = 1
 	star_speed = 2
 
 	create_stars()
@@ -1045,6 +1043,8 @@ function _init()
 end
 
 function reset()
+
+	game_speed = 1
 	star_col_1 = 10
 	star_col_2 = 9
 
@@ -1311,9 +1311,9 @@ function _update60()
 
 	--debug_speed()
 
-	if dying and not move_stars_anyway then
+	if dying and not move_stars_anyway and not title_screen then
 		star_speed = max(0, star_speed-0.1)
-	elseif stage_over and not next_zone then
+	elseif stage_over and not next_zone and not title_screen then
 		star_speed +=0.2
 	elseif warp_zone then
 		star_speed = 0.5
@@ -1601,13 +1601,13 @@ function animate_powerups()
 	end
 end
 
-function debug_weapon_level()
-	if btnp(2) then
-		charge +=1
-	elseif btnp(3) then
-		charge -=1
-	end
-end
+-- function debug_weapon_level()
+-- 	if btnp(2) then
+-- 		charge +=1
+-- 	elseif btnp(3) then
+-- 		charge -=1
+-- 	end
+-- end
 
 function debug_many_powerups()
 	if(rnd(128) < 2) add_actor(powerup:new({x=rnd(119) + 4, y = -8}))
