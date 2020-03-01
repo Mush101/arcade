@@ -1071,6 +1071,9 @@ function reset()
 	dying = false
 
 	score.score = 0
+	add_actor(delete_code)
+	add_actor(konami_code)
+	add_actor(lda_code)
 end
 
 function int_to_char(i)
@@ -1199,15 +1202,54 @@ end
 
 ---------------------------------------------------------------------------------------------------------------------------------
 
+delete_code = actor:new({code = {2,2,2,2,3,3,3,3}, pointer = 0})
+
+function delete_code:update()
+	for i = 0,3 do
+		if btnp(i) then
+			if self.code[self.pointer] == i then
+				self.pointer +=1
+				if self.pointer > #self.code then
+					self:do_event()
+					sfx(9)
+					self.pointer = 1
+				end
+			else
+				self.pointer = 1
+			end
+		end
+	end
+end
+
+function delete_code:delete()
+	self.pointer = 1
+	del(actors, self)
+end
+
+function delete_code:do_event()
+	delete_mode = true
+	delete_counter = 6
+end
+
+konami_code = delete_code:new({code = {2,2,3,3,0,1,0,1}})
+
+function konami_code:do_event()
+	lives = 30
+end
+
+lda_code = delete_code:new({code = {3,3,0,3,1}})
+
+function lda_code:do_event()
+	game_speed = 2
+end
+
+---------------------------------------------------------------------------------------------------------------------------------
+
 function _update60()
 
 	tutorial_over = tutorials_shown >= 2
 
 	if title_screen then
-		if btnp(1) then
-			delete_mode = true
-			delete_counter = 6
-		end
 		if delete_mode then
 			if btnp(3) then
 				delete_counter = min(delete_counter+1, 6)
@@ -1221,6 +1263,7 @@ function _update60()
 					high_scores[delete_counter] = {name={0,0,0}, score=0}
 					sort_highscores()
 					save_highscores()
+					sfx(7)
 				end
 			end
 		elseif btnp(4) or btnp(5) then
@@ -1229,6 +1272,9 @@ function _update60()
 			intro = true
 			stage_over = false
 			title_screen = false
+			delete_code:delete()
+			konami_code:delete()
+			lda_code:delete()
 		end
 	else
 		set_zone_properties()
