@@ -110,7 +110,7 @@ function player:update()
 				add_actor(shot)
 				sfx(2)
 			else
-				self.shot_timer = 15
+				self.shot_timer = 20
 				local shot = shot:new({x=self.x-3, y=self.y-4, pal = 12, speed = 6, plasma = true})
 				add_actor(shot)
 				shot = shot:new({x=self.x+3, y=self.y-4, pal = 12, speed = 6, plasma = true})
@@ -401,22 +401,10 @@ function boss_enemy:update()
 		self.goal_x = self.x
 		self.goal_y = self.y
 	end
-	if self.pupil_offset_x < self.pupil_offset_x_goal then
-		self.pupil_offset_x += 1
-	elseif self.pupil_offset_x > self.pupil_offset_x_goal then
-		self.pupil_offset_x -= 1
-	end
+	self:update_unique()
 	self.iframes = max(0, self.iframes-1)
 	if not dying then
 		self:move()
-	end
-	if self.attacking then
-		self.pupil_size+=0.5
-		if self.pupil_size >= 3 then
-			add_actor(big_enemy_attack:new({x=self.x-3+self.pupil_offset_x, y=self.y-3+self.pupil_offset_y+4, colour = self.colour}))
-			self.pupil_size = 3
-			self.attacking=false
-		end
 	end
 
 	if dying then
@@ -430,15 +418,39 @@ function boss_enemy:update()
 	end
 end
 
+function boss_enemy:update_unique()
+
+	if self.pupil_offset_x < self.pupil_offset_x_goal then
+		self.pupil_offset_x += 1
+	elseif self.pupil_offset_x > self.pupil_offset_x_goal then
+		self.pupil_offset_x -= 1
+	end
+	if self.attacking then
+		self.pupil_size+=0.5
+		if self.pupil_size >= 3 then
+			add_actor(big_enemy_attack:new({x=self.x-3+self.pupil_offset_x, y=self.y-3+self.pupil_offset_y+4, colour = self.colour}))
+			self.pupil_size = 3
+			self.attacking=false
+		end
+	end
+
+end
+
 function boss_enemy:draw()
 	if self.iframes%4<2 then
+		pal(2, self.secondary_colour)
 		circfill(self.x, self.y, 16, self.colour)
 		sspr(0, 40, 32, 16, self.x-16, self.y-4)
-		sspr(32, 40, 32, 16, self.x-16, self.y-9)
-		sspr(32, 40, 32, 16, self.x-16, self.y+4, 32, 16, false, true)
+		self:draw_unique()
 		circ(self.x, self.y, 16, self.secondary_colour)
 		circfill(self.x+self.pupil_offset_x, self.y+4+self.pupil_offset_y, self.pupil_size, 0)
+		pal()
 	end
+end
+
+function boss_enemy:draw_unique()
+	sspr(32, 40, 32, 16, self.x-16, self.y-9)
+	sspr(32, 40, 32, 16, self.x-16, self.y+4, 32, 16, false, true)
 end
 
 function boss_enemy:hit()
@@ -487,6 +499,59 @@ function boss_enemy:time_unit_over()
 			add_actor(basic_enemy:new({x=i,actions_over=true,points=0,final="go_away", actions = {{x=i,y=-8}, {x=i,y=64}} }))
 		end
 	end
+end
+
+--------------------------------------------------------------------------------------------------------------------------------
+
+boss_enemy_2 = boss_enemy:new({colour=12,secondary_colour=1,name="azure general", shoot_turn = false, preparing_shot = false, shots_fired = 0, shot_delay=0})
+
+function boss_enemy_2:update_unique()
+	if self.preparing_shot then
+		if self.pupil_size>1 then
+			self.pupil_size -= 0.5
+		elseif self.shots_fired < 6 then
+			if self.shot_delay<=0 then
+				self.shots_fired+=1
+				self.shot_delay=1
+				add_actor(big_enemy_attack:new({x=self.x-3+self.pupil_offset_x, y=self.y-3+self.pupil_offset_y+4, colour = self.colour, add_x = self.add_x}))
+			else
+				self.shot_delay-=0.1
+			end
+		else
+			self.preparing_shot = false
+			self.shots_fired = 0
+		end
+	else
+		self.pupil_size = 3
+	end
+	local dist = player.x - self.x
+	self.pupil_offset_x = dist / 32 - 0.5
+	self.pupil_offset_y = 2 - abs(self.pupil_offset_x /2)
+	self.add_x = (player.x - self.x) / (player.y - self.y)
+end
+
+function boss_enemy_2:draw_unique()
+	sspr(64, 40, 32, 16, self.x-16, self.y-9)
+end
+
+function boss_enemy_2:time_unit_over()
+	if self.y < 0 then
+		self.goal_x=64
+	elseif not self.shoot_turn then
+		if self.goal_x < 64 then
+			self.goal_x = 96
+		else
+			self.goal_x = 32
+		end
+		self.shoot_turn = true
+	elseif self.shoot_turn then
+		self.shoot_turn = false
+		self.preparing_shot = true
+		-- add_actor(basic_enemy:new({x=(128-self.x),actions_over=true,points=0,final="go_away", actions = {{x=(128-self.x),y=-8}, {x=(128-self.x),y=64, colour=12}} }))
+	end
+	self.goal_y = 32
+	self.prev_x = self.x
+	self.prev_y = self.y
 end
 
 --------------------------------------------------------------------------------------------------------------------------------
@@ -634,7 +699,14 @@ end
 enemy_attack = actor:new({collision_width=5, collision_height=5, colour = 8, interactable = true, projectile = true})
 
 function enemy_attack:update()
+	if not self.played_sound then
+		sfx(8)
+		self.played_sound = true
+	end
 	self.y+=1 * game_speed
+	if self.add_x then
+		self.x+=self.add_x * game_speed
+	end
 	if self.y > 128 then
 		self.dead = true
 	end
@@ -778,7 +850,7 @@ function _init()
 
 	add_actor(zone_controller)
 
-	current_zone = 4
+	current_zone = 1
 
 	zone_controller:set_zone(zones[current_zone])
 
@@ -863,9 +935,18 @@ function setup_zones()
 	zones[4] = {
 		new_side_bouncer("left",72,64,56,64,4,false,0),
 		new_side_bouncer("right",40,48,88,48,4,false,0),
-		new_side_bouncer("left",96,32,32,32,4,false,0),
+		new_side_bouncer("left",104,32,24,32,4,false,0),
 		{wait=16},
 		{{boss=1}},
+		{wait=16}
+	}
+
+	zones[5] = {
+		new_side_bouncer("left",104,32,24,32,4,false,3),
+		new_side_bouncer("right",40,48,88,48,4,false,3),
+		new_side_bouncer("left",72,64,56,64,4,false,3),
+		{wait=16},
+		{{boss=2}},
 		{wait=16}
 	}
 end
@@ -935,6 +1016,10 @@ function create_enemies(enemies)
 			add_actor(powerup:new({x=a.powerup, y=-8}))
 		elseif a.boss == 1 then
 			local boss = boss_enemy:new({x=64,y=-32})
+			add_actor(boss)
+			healthbar.tracking = boss
+		elseif a.boss == 2 then
+			local boss = boss_enemy_2:new({x=64,y=-32})
 			add_actor(boss)
 			healthbar.tracking = boss
 		else
@@ -1108,15 +1193,20 @@ function set_zone_properties()
 		star_col_1 = 7
 		star_col_2 = 14
 		next_zone_1 = 4
-		next_zone_2 = 1
+		next_zone_2 = 5
 	elseif current_zone == 3 then
 		star_col_1 = 7
 		star_col_2 = 11
-		next_zone_1 = 1
+		next_zone_1 = 5
 		next_zone_2 = 1
 	elseif current_zone == 4 then
 		star_col_1 = 8
 		star_col_2 = 2
+		next_zone_1 = 1
+		next_zone_2 = 1
+	elseif current_zone == 5 then
+		star_col_1 = 12
+		star_col_2 = 1
 		next_zone_1 = 1
 		next_zone_2 = 1
 	end
@@ -1406,14 +1496,14 @@ d77d0d77d0000000000000000001111055ccc7c55000000000000000000000000000000000000000
 077eee77077eee77077eee7707000007000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00777770007777700077777000777770000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000002222222000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000227777777220000000000000000000000000222000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000022777777777772200000000000000000200000222000002000000000000000000000000000000000000000000000000000000000000000000000000
-00000000277777777777777720000000000000000220002222200022000000000000000000000000000000000000000000000000000000000000000000000000
-00000002777777777777777772000000000000000222002222200222000000000000000000000000000000000000000000000000000000000000000000000000
-00000027777777777777777777200000000020000222200000002222000020000000000000000000000000000000000000000000000000000000000000000000
-00000277777777777777777777720000000022000220000000000022000220000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000020000000000000000000000000000111111100000000000000000000000000000000000000000000
+00000000000002222222000000000000000000000000000020000000000000000000000000111000000011100000000000000000000000000000000000000000
+00000000000227777777220000000000000000000000000222000000000000000000000011000111111100011000000000000000000000000000000000000000
+00000000022777777777772200000000000000000200000222000002000000000000000100111000000011100100000000000000000000000000000000000000
+00000000277777777777777720000000000000000220002222200022000000000000001011000000000000011010000000000000000000000000000000000000
+00000002777777777777777772000000000000000222002222200222000000000000010100000000000000000101000000000000000000000000000000000000
+00000027777777777777777777200000000020000222200000002222000020000000001000000000000000000010000000000000000000000000000000000000
+00000277777777777777777777720000000022000220000000000022000220000000010000000000000000000001000000000000000000000000000000000000
 00000277777777777777777777720000000022200000000000000000002220000000000000000000000000000000000000000000000000000000000000000000
 00000027777777777777777777200000000022220000000000000000022220000000000000000000000000000000000000000000000000000000000000000000
 00000002777777777777777772000000000022200000000000000000002220000000000000000000000000000000000000000000000000000000000000000000
@@ -1430,3 +1520,4 @@ __sfx__
 000100001f0502305026050290502b0502d0502d0502c0002c0003100033000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 000300001f0501f0501f0502705027050270503305033050330500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 000100002a35023350283501f360263601c36022360173601c36013360183600f370133700b370103700937000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000100002655020550265501a5502555019550235501e200172000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
