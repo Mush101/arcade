@@ -1003,6 +1003,9 @@ end
 --------------------------------------------------------------------------------------------------------------------------------
 
 function _init()
+
+	cartdata("mush_vitreous_1")
+
 	actors = {}
 	add_actor(player)
 
@@ -1027,13 +1030,12 @@ function _init()
 
 	add_actor(zone_controller)
 
-	-- next_zone_1 = 1
-	-- next_zone_2 = 1
 	add_actor(healthbar)
 
+	-- load high scores
 	high_scores = {}
 	for i = 1, 5 do
-		high_scores[i] = {name={flr(rnd(26)),flr(rnd(26)),flr(rnd(26))}, score=0}
+		high_scores[i] = {name = {dget(4*i), dget(4*i+1), dget(4*i+2)}, score = dget(4*i+3)}
 	end
 
 	reset()
@@ -1455,6 +1457,7 @@ function update_intro()
 					if high_score_get then
 						high_scores[5] = {name = player_name, score = score.score}
 						sort_highscores()
+						save_highscores()
 					end
 					reset()
 				end
@@ -1757,6 +1760,15 @@ function sort_highscores()
 		del(high_scores, largest_score_obj)
 	end
 	high_scores = new_high_scores
+end
+
+function save_highscores()
+	for i = 1, 5 do
+		dset(4*i, high_scores[i].name[1])
+		dset(4*i+1, high_scores[i].name[2])
+		dset(4*i+2, high_scores[i].name[3])
+		dset(4*i+3, high_scores[i].score)
+	end
 end
 
 function debug_draw_collision_boxes()
