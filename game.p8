@@ -879,7 +879,7 @@ function portal:update()
 		--warp_zone = false
 		next_zone = self.next_zone
 		if self.next_zone == 1 then
-			game_speed += 0.5
+			game_speed += 0.35
 		end
 		sfx(10)
 	end
